@@ -257,7 +257,6 @@
                 <button id="download-new" class="legend-btn" title="הורד GeoJSON">⬇</button>
               </div>
               <div style="margin-top:8px;padding-top:6px;border-top:1px solid #e2e8f0;">
-                <button id="download-both" class="legend-btn-full" title="הורד שני קבצי GeoJSON">📦 הורד שתי השכבות</button>
               </div>`;
             L.DomEvent.disableClickPropagation(div);
             L.DomEvent.disableScrollPropagation(div);
@@ -266,7 +265,6 @@
             const newCb = div.querySelector('#lg-new');
             const downloadOldBtn = div.querySelector('#download-old');
             const downloadNewBtn = div.querySelector('#download-new');
-            const downloadBothBtn = div.querySelector('#download-both');
             
             legendOldCbRef.current = oldCb;
             legendNewCbRef.current = newCb;
@@ -275,7 +273,6 @@
             newCb.addEventListener('change', (e) => setShowNewLayer(e.target.checked));
             downloadOldBtn.addEventListener('click', downloadOldLayer);
             downloadNewBtn.addEventListener('click', downloadNewLayer);
-            downloadBothBtn.addEventListener('click', downloadBothLayers);
             
             return div;
           };
