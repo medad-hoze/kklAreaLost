@@ -117,9 +117,10 @@
       <div id="network"></div>
       <div class="net-legend">
         <h4>מקרא</h4>
-        <div class="row"><div class="chip" style="background:#c3dafe;border-color:#2c5282">סוג 1</div></div>
-        <div class="row"><div class="chip" style="background:#feebc8;border-color:#c05621">סוג 2</div></div>
-        <div class="row"><div class="chip" style="background:#c6f6d5;border-color:#276749">סוג 3</div></div>
+        <div class="row"><div class="chip" style="background:#c3dafe;border-color:#2c5282">חקלאי</div></div>
+        <div class="row"><div class="chip" style="background:#feebc8;border-color:#c05621">מגורים</div></div>
+        <div class="row"><div class="chip" style="background:#c6f6d5;border-color:#276749">ציבורי</div></div>
+
         <div class="row"><div class="shape-box"></div> קקל (ריבוע)</div>
         <div class="row"><div class="shape-diamond"></div> מדינה (מעוין)</div>
         <div class="row"><div class="shape-ellipse"></div> אחר (אליפסה)</div>
@@ -165,6 +166,9 @@
       if (b === 'מדינה') return 'diamond';
       return 'ellipse';
     };
+
+    const TYPE_LABELS = { 1: 'חקלאי', 2: 'מגורים', 3: 'ציבורי' };
+  const typeToLabel = (t) => TYPE_LABELS[parseInt(t,10)] || 'לא ידוע';
 
     function App() {
       const [featuresOld, setFeaturesOld] = useState([]);
@@ -751,9 +755,9 @@
                     </select>
                     <select value={typeFilter} onChange={(e)=>setTypeFilter(e.target.value)}>
                       <option value="all">כל הסוגים</option>
-                      <option value="1">סוג 1</option>
-                      <option value="2">סוג 2</option>
-                      <option value="3">סוג 3</option>
+                      <option value="1">חקלאי</option>
+                      <option value="2">מגורים</option>
+                      <option value="3">ציבורי</option>
                     </select>
                   </div>
 
@@ -880,11 +884,11 @@
                             <td><strong>{p.old_key}</strong></td>
                             <td>
                               {(p.new_keys || []).map((k,i)=>(
-                                <span key={i} className={`badge badge-type-${(p.new_type||[])[i]}`}>{k}</span>
+                                <span key={i} className={`badge badge-type-${(p.new_type||[])[i]}`}>{k} </span>
                               ))}
                             </td>
                             <td>{p.old_baalot}</td>
-                            <td><span className={`badge badge-type-${p.old_type}`}>סוג {p.old_type}</span></td>
+                            <td><span className={`badge badge-type-${p.old_type}`}>{typeToLabel(p.old_type)}</span></td>
                             <td>
                               <span className={(p.area_lost||0) > 0 ? 'stat negative' : 'stat neutral'}>
                                 {fmt(p.area_lost)} ({fmt(p.area_lost_pct)}%)
