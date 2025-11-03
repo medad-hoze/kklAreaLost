@@ -320,7 +320,7 @@
               weight: 2,
               fillOpacity: 0.15
             }).bindPopup(`
-              <strong>מפתח חדש:</strong> ${f.properties.key}<br/>
+              <strong>גוש חלקה - חדש:</strong> ${f.properties.key}<br/>
               <strong>סוג:</strong> ${f.properties.type}<br/>
               <strong>בעלות:</strong> ${f.properties.baalot}
             `);
@@ -341,8 +341,8 @@
             const layer = L.polygon(latlngs, {
               color, fillColor: color, fillOpacity: 0.30, weight: 2
             }).bindPopup(`
-              <strong>מפתח ישן:</strong> ${p.old_key}<br/>
-              <strong>מפתחות חדשים:</strong> ${(p.new_keys || []).join(', ')}<br/>
+              <strong>גוש חלקה - ישן:</strong> ${p.old_key}<br/>
+              <strong>גוש חלקה - חדש:</strong> ${(p.new_keys || []).join(', ')}<br/>
               <strong>שטח שאבד:</strong> ${fmt(p.area_lost)} (${fmt(p.area_lost_pct)}%)<br/>
               <strong>ציון שאבד:</strong> ${fmt(p.score_lost)}
             `);
@@ -485,8 +485,8 @@
         const data = dataToExport.map(f => {
           const p = f.properties || {};
           return {
-            'מפתח ישן': p.old_key || '',
-            'מפתחות חדשים': (p.new_keys || []).join(', '),
+            'גוש חלקה - ישן': p.old_key || '',
+            'גוש חלקה - חדש': (p.new_keys || []).join(', '),
             'בעלות': p.old_baalot || '',
             'סוג': p.old_type || '',
             'שטח שאבד': fmt(p.area_lost),
@@ -501,8 +501,8 @@
         
         // Set column widths
         ws['!cols'] = [
-          { wch: 15 },  // מפתח ישן
-          { wch: 30 },  // מפתחות חדשים
+          { wch: 15 },  // גוש חלקה - ישן
+          { wch: 30 },  // גוש חלקה - חדש
           { wch: 12 },  // בעלות
           { wch: 8 },   // סוג
           { wch: 12 },  // שטח שאבד
@@ -738,13 +738,13 @@
                   <div className="filter-group">
                     <input 
                       type="text" 
-                      placeholder="מפתח ישן..." 
+                      placeholder="גוש חלקה - ישן..." 
                       value={searchTerm} 
                       onChange={(e)=>setSearchTerm(e.target.value)}
                     />
                     <input 
                       type="text" 
-                      placeholder="מפתחות חדשים..." 
+                      placeholder="גוש חלקה - חדש..." 
                       value={newKeysSearch} 
                       onChange={(e)=>setNewKeysSearch(e.target.value)}
                     />
@@ -830,13 +830,13 @@
                           onClick={() => handleSort('old_key')} 
                           style={{cursor:'pointer', background: sortField === 'old_key' ? '#edf2f7' : 'transparent', fontWeight: sortField === 'old_key' ? '700' : '600'}}
                         >
-                          מפתח ישן {sortField === 'old_key' && (sortDirection === 'asc' ? '↑' : '↓')}
+                          גוש חלקה - ישן {sortField === 'old_key' && (sortDirection === 'asc' ? '↑' : '↓')}
                         </th>
                         <th 
                           onClick={() => handleSort('new_keys')} 
                           style={{cursor:'pointer', background: sortField === 'new_keys' ? '#edf2f7' : 'transparent', fontWeight: sortField === 'new_keys' ? '700' : '600'}}
                         >
-                          מפתחות חדשים {sortField === 'new_keys' && (sortDirection === 'asc' ? '↑' : '↓')}
+                          גוש חלקה - חדש {sortField === 'new_keys' && (sortDirection === 'asc' ? '↑' : '↓')}
                         </th>
                         <th 
                           onClick={() => handleSort('old_baalot')} 
