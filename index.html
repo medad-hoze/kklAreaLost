@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8"/>
   <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
-  <title> ניהול שטחים - קקל</title>
+  <title>ניהול שטחים - קק"ל</title>
 
   <!-- Leaflet -->
   <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css"/>
@@ -13,12 +13,12 @@
   <script src="https://cdnjs.cloudflare.com/ajax/libs/vis-network/9.1.2/standalone/umd/vis-network.min.js"></script>
   <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/vis-network/9.1.2/styles/vis-network.min.css"/>
 
-  <!-- React -->
+  <!-- React + Babel -->
   <script crossorigin src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
   <script crossorigin src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
   <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
 
-  <!-- SheetJS for Excel export -->
+  <!-- SheetJS -->
   <script src="https://cdn.sheetjs.com/xlsx-0.20.1/package/dist/xlsx.full.min.js"></script>
 
   <style>
@@ -73,10 +73,8 @@
     .stat-item{flex:1;min-width:120px}
     .stat-label{font-size:12px;color:#718096;margin-bottom:5px}
     .stat-value{font-size:20px;font-weight:700;color:#2d3748}
-
     datalist{background:#fff;border:1px solid #e2e8f0}
 
-    /* Modal + network */
     .overlay{position:fixed;top:0;left:0;right:0;bottom:0;background:rgba(0,0,0,.5);z-index:999;display:none}
     .overlay.active{display:block}
     .network-window{position:fixed;top:50%;left:50%;transform:translate(-50%,-50%);width:80%;height:80%;background:#fff;border-radius:12px;box-shadow:0 20px 60px rgba(0,0,0,.3);z-index:1000;display:none;flex-direction:column}
@@ -87,7 +85,6 @@
     .close-btn:hover{background:rgba(255,255,255,.3)}
     .network-body{flex:1;min-height:0;position:relative;display:flex}
     #network{flex:1;width:100%;height:100%;min-height:0}
-
     .net-legend{position:absolute;left:12px;top:12px;background:#ffffffd9;border:1px solid #e2e8f0;border-radius:8px;padding:8px 10px;font-size:12px;color:#2d3748;box-shadow:0 2px 8px rgba(0,0,0,.08)}
     .net-legend h4{font-size:12px;margin-bottom:6px}
     .net-legend .row{display:flex;gap:8px;align-items:center;margin:3px 0}
@@ -107,68 +104,53 @@
     </div>
   </div>
 
-  <div id="overlay" class="overlay"></div>
-  <div id="networkWindow" class="network-window">
-    <div class="network-header">
-      <h2>רשת קשרים מרכזיים</h2>
-      <button class="close-btn" onclick="closeNetwork()">×</button>
-    </div>
-    <div class="network-body">
-      <div id="network"></div>
-      <div class="net-legend">
-        <h4>מקרא</h4>
-        <div class="row"><div class="chip" style="background:#c3dafe;border-color:#2c5282">חקלאי</div></div>
-        <div class="row"><div class="chip" style="background:#feebc8;border-color:#c05621">מגורים</div></div>
-        <div class="row"><div class="chip" style="background:#c6f6d5;border-color:#276749">ציבורי</div></div>
-
-        <div class="row"><div class="shape-box"></div> קקל (ריבוע)</div>
-        <div class="row"><div class="shape-diamond"></div> מדינה (מעוין)</div>
-        <div class="row"><div class="shape-ellipse"></div> אחר (אליפסה)</div>
-      </div>
-    </div>
-  </div>
-
   <script type="text/babel">
     const { useState, useEffect, useRef } = React;
     const fmt = (n, d = 2) => (typeof n === 'number' && isFinite(n) ? n.toFixed(d) : '—');
 
-    // Simple WKT POLYGON -> [[x,y], ...]
     function parseWKTPolygonXY(wkt) {
       if (!wkt || typeof wkt !== 'string') return null;
       const m = wkt.trim().match(/^POLYGON\s*\(\(\s*(.+?)\s*\)\)$/i);
       if (!m) return null;
-      return m[1].split(',').map(pair=>{
-        const [x,y] = pair.trim().split(/\s+/).map(parseFloat);
-        return (isFinite(x)&&isFinite(y)) ? [x,y] : null;
+      return m[1].split(',').map(pair => {
+        const [x, y] = pair.trim().split(/\s+/).map(parseFloat);
+        return (isFinite(x) && isFinite(y)) ? [x, y] : null;
       }).filter(Boolean);
     }
+
     function guessCRSFromXY(xy) {
       if (!xy || !xy.length) return 'EPSG:4326';
       const [x, y] = xy[0];
       return (Math.abs(x) <= 180 && Math.abs(y) <= 90) ? 'EPSG:4326' : 'EPSG:2039';
     }
+
     function xyToLatLngs(xy, fromCrs) {
       if (!xy) return null;
-      if (fromCrs === 'EPSG:4326') return xy.map(([x,y])=>[y,x]);
-      // NOTE: Add real 2039→4326 transform here if needed.
+      // Simple fallback: treat as [x=lon, y=lat] in both cases
+      return xy.map(([x, y]) => [y, x]);
     }
 
-    // ---- Visual encodings ----
     const typeToColor = (t) => {
-      const k = parseInt(t,10);
+      const k = parseInt(t, 10);
       if (k === 1) return { background:'#c3dafe', border:'#2c5282' };
       if (k === 2) return { background:'#feebc8', border:'#c05621' };
       if (k === 3) return { background:'#c6f6d5', border:'#276749' };
       return { background:'#e2e8f0', border:'#718096' };
     };
+
     const baalotToShape = (b) => {
       if (b === 'קקל') return 'box';
       if (b === 'מדינה') return 'diamond';
       return 'ellipse';
     };
 
-    const TYPE_LABELS = { 1: 'חקלאי', 2: 'מגורים', 3: 'ציבורי' };
-  const typeToLabel = (t) => TYPE_LABELS[parseInt(t,10)] || 'לא ידוע';
+    const TYPE_LABELS = {
+      'מגבלות בניה ופיתוח': 'מגבלות בניה ופיתוח',
+      'מגורים': 'מגורים',
+      'יעוד עפ"י תכנית מאושרת אחרת': 'יעוד עפ"י תכנית מאושרת אחרת',
+      'שטח שהתוכנית אינה חלה עליו': 'שטח שהתוכנית אינה חלה עליו'
+    };
+    const typeToLabel = (t) => TYPE_LABELS[t] || 'לא ידוע';
 
     function App() {
       const [featuresOld, setFeaturesOld] = useState([]);
@@ -176,6 +158,7 @@
       const [filteredOld, setFilteredOld] = useState([]);
       const [loading, setLoading] = useState(true);
       const [error, setError] = useState(null);
+
       const [searchTerm, setSearchTerm] = useState('');
       const [newKeysSearch, setNewKeysSearch] = useState('');
       const [baalotFilter, setBaalotFilter] = useState('all');
@@ -185,10 +168,15 @@
       const [minScoreLost, setMinScoreLost] = useState('');
       const [maxScoreLost, setMaxScoreLost] = useState('');
       const [networkSearch, setNetworkSearch] = useState('');
+
       const [showNewLayer, setShowNewLayer] = useState(true);
       const [showOldLayer, setShowOldLayer] = useState(true);
       const [sortField, setSortField] = useState(null);
       const [sortDirection, setSortDirection] = useState('asc');
+
+      const [addLayersData, setAddLayersData] = useState([]);
+      const [showStatisticsWindow, setShowStatisticsWindow] = useState(false);
+      const [showNetworkWindow, setShowNetworkWindow] = useState(false);
 
       const mapInstanceRef = useRef(null);
       const groupOldRef = useRef(null);
@@ -199,29 +187,52 @@
 
       useEffect(() => {
         Promise.all([
-          fetch('comparison_results.json').then(r => { if(!r.ok) throw new Error('שגיאה בטעינת comparison_results.json'); return r.json(); }),
-          fetch('newLayer_wkt.json').then(r => { if(!r.ok) throw new Error('שגיאה בטעינת newLayer_wkt.json'); return r.json(); }),
+          fetch('comparison_results.json').then(r => {
+            if (!r.ok) throw new Error('שגיאה בטעינת comparison_results.json');
+            return r.json();
+          }),
+          fetch('newLayer_wkt.json').then(r => {
+            if (!r.ok) throw new Error('שגיאה בטעינת newLayer_wkt.json');
+            return r.json();
+          }),
+          fetch('add_layers.json').then(r => r.ok ? r.json() : []).catch(() => [])
         ])
-        .then(([oldData, newData]) => {
+        .then(([oldData, newData, addData]) => {
           const oldF = oldData.features || [];
           const newF = newData.features || [];
           setFeaturesOld(oldF);
           setFilteredOld(oldF);
           setFeaturesNew(newF);
+          setAddLayersData(addData || []);
           setLoading(false);
         })
-        .catch(err => { setError(err.message); setLoading(false); });
+        .catch(err => {
+          setError(err.message);
+          setLoading(false);
+        });
       }, []);
 
       useEffect(() => {
-        if (!loading && (featuresOld.length || featuresNew.length) && !mapInstanceRef.current) initMap();
+        if (!loading && (featuresOld.length || featuresNew.length) && !mapInstanceRef.current) {
+          initMap();
+        }
       }, [loading, featuresOld, featuresNew]);
 
-      useEffect(() => { filterOld(); }, [searchTerm, newKeysSearch, baalotFilter, typeFilter, minAreaLost, maxAreaLost, minScoreLost, maxScoreLost, featuresOld]);
+      useEffect(() => { filterOld(); }, [
+        searchTerm, newKeysSearch, baalotFilter, typeFilter,
+        minAreaLost, maxAreaLost, minScoreLost, maxScoreLost,
+        featuresOld
+      ]);
+
       useEffect(() => { redrawLayers(); }, [filteredOld, featuresNew, showNewLayer, showOldLayer]);
 
-      useEffect(() => { if (legendOldCbRef.current) legendOldCbRef.current.checked = showOldLayer; }, [showOldLayer]);
-      useEffect(() => { if (legendNewCbRef.current) legendNewCbRef.current.checked = showNewLayer; }, [showNewLayer]);
+      useEffect(() => {
+        if (legendOldCbRef.current) legendOldCbRef.current.checked = showOldLayer;
+      }, [showOldLayer]);
+
+      useEffect(() => {
+        if (legendNewCbRef.current) legendNewCbRef.current.checked = showNewLayer;
+      }, [showNewLayer]);
 
       const initMap = () => {
         try {
@@ -269,7 +280,7 @@
             const newCb = div.querySelector('#lg-new');
             const downloadOldBtn = div.querySelector('#download-old');
             const downloadNewBtn = div.querySelector('#download-new');
-            
+
             legendOldCbRef.current = oldCb;
             legendNewCbRef.current = newCb;
 
@@ -277,7 +288,7 @@
             newCb.addEventListener('change', (e) => setShowNewLayer(e.target.checked));
             downloadOldBtn.addEventListener('click', downloadOldLayer);
             downloadNewBtn.addEventListener('click', downloadNewLayer);
-            
+
             return div;
           };
           legend.addTo(map);
@@ -352,7 +363,9 @@
 
         let bounds = null;
         if (showNewLayer && gNew.getLayers().length) bounds = gNew.getBounds();
-        if (showOldLayer && gOld.getLayers().length) bounds = bounds ? bounds.extend(gOld.getBounds()) : gOld.getBounds();
+        if (showOldLayer && gOld.getLayers().length) {
+          bounds = bounds ? bounds.extend(gOld.getBounds()) : gOld.getBounds();
+        }
         if (bounds && bounds.isValid()) map.fitBounds(bounds, { padding: [20, 20] });
       };
 
@@ -361,30 +374,23 @@
         const newKeysTerm = (newKeysSearch || '').toLowerCase().trim();
         const filtered = featuresOld.filter(f => {
           const p = f.properties || {};
-          
-          // Old key search
+
           const matchOldKey = !term || (p.old_key && p.old_key.toLowerCase().includes(term));
-          
-          // New keys search
-          const matchNewKeys = !newKeysTerm || (Array.isArray(p.new_keys) && p.new_keys.some(k => (k || '').toLowerCase().includes(newKeysTerm)));
-          
-          // Baalot filter
+          const matchNewKeys = !newKeysTerm ||
+            (Array.isArray(p.new_keys) && p.new_keys.some(k => (k || '').toLowerCase().includes(newKeysTerm)));
+
           const matchBaalot = baalotFilter === 'all' || p.old_baalot === baalotFilter;
-          
-          // Type filter
           const matchType = typeFilter === 'all' || p.old_type === parseInt(typeFilter, 10);
-          
-          // Area lost filter
+
           const areaLost = p.area_lost_pct || 0;
           const matchMinArea = !minAreaLost || areaLost >= parseFloat(minAreaLost);
           const matchMaxArea = !maxAreaLost || areaLost <= parseFloat(maxAreaLost);
-          
-          // Score lost filter
+
           const scoreLost = p.score_lost || 0;
           const matchMinScore = !minScoreLost || scoreLost >= parseFloat(minScoreLost);
           const matchMaxScore = !maxScoreLost || scoreLost <= parseFloat(maxScoreLost);
-          
-          return matchOldKey && matchNewKeys && matchBaalot && matchType && 
+
+          return matchOldKey && matchNewKeys && matchBaalot && matchType &&
                  matchMinArea && matchMaxArea && matchMinScore && matchMaxScore;
         });
         setFilteredOld(filtered);
@@ -392,21 +398,27 @@
 
       const flashLayer = (layer) => {
         if (!layer) return;
-        const orig = { color: layer.options.color, weight: layer.options.weight, fillOpacity: layer.options.fillOpacity };
-        layer.setStyle({ color: '#111827', weight: 5, fillOpacity: Math.min(0.35, (orig.fillOpacity ?? 0.2) + 0.15) });
+        const orig = {
+          color: layer.options.color,
+          weight: layer.options.weight,
+          fillOpacity: layer.options.fillOpacity
+        };
+        layer.setStyle({
+          color: '#111827',
+          weight: 5,
+          fillOpacity: Math.min(0.35, (orig.fillOpacity ?? 0.2) + 0.15)
+        });
         layer.bringToFront();
         setTimeout(() => layer.setStyle(orig), 1200);
       };
 
-      // Build & open the network (if no input, use all filtered rows)
       const openNetworkGraph = () => {
         const allMode = !networkSearch.trim();
         const searchKeys = allMode
           ? []
           : networkSearch.split(',').map(k => k.trim()).filter(Boolean);
 
-        // Gather nodes & edges
-        const nodeMap = new Map(); // id -> node
+        const nodeMap = new Map();
         const edges = [];
 
         const ensureNode = (id, type, baalot, isOld) => {
@@ -427,14 +439,12 @@
         filteredOld.forEach(f => {
           const p = f.properties || {};
           const include = allMode ||
-                          searchKeys.includes(p.old_key) ||
-                          (Array.isArray(p.new_keys) && p.new_keys.some(k => searchKeys.includes(k)));
+            searchKeys.includes(p.old_key) ||
+            (Array.isArray(p.new_keys) && p.new_keys.some(k => searchKeys.includes(k)));
           if (!include) return;
 
-          // Old node
           ensureNode(p.old_key, p.old_type, p.old_baalot, true);
 
-          // New nodes + edges
           (p.new_keys || []).forEach((nk, i) => {
             const nType = Array.isArray(p.new_type) ? p.new_type[i] : undefined;
             const nBaalot = Array.isArray(p.new_baalot) ? p.new_baalot[i] : undefined;
@@ -444,40 +454,82 @@
               from: p.old_key,
               to: nk,
               arrows: 'to',
-              label: (p.area_lost_pct != null ? `${fmt(p.area_lost_pct,1)}%` : ''),
+              label: (p.area_lost_pct != null ? `${fmt(p.area_lost_pct, 1)}%` : ''),
               color: (p.area_lost_pct || 0) > 10 ? '#e53e3e' : '#667eea',
               width: 1.5
             });
           });
         });
 
-        // Show modal FIRST so container has size
-        const win = document.getElementById('networkWindow');
-        const overlay = document.getElementById('overlay');
-        win.classList.add('active');
-        overlay.classList.add('active');
+        setShowNetworkWindow(true);
 
-        // Create the network now that it's visible
-        const container = document.getElementById('network');
-        container.innerHTML = '';
+        // wait for modal to render
+        setTimeout(() => {
+          const container = document.getElementById('network');
+          if (!container) return;
+          container.innerHTML = '';
 
-        const data = {
-          nodes: new vis.DataSet(Array.from(nodeMap.values())),
-          edges: new vis.DataSet(edges)
-        };
-        const options = {
-          nodes: { shadow: false },
-          edges: { smooth: { type: 'cubicBezier' }, font: { size: 12 } },
-          physics: { enabled: true, solver: 'barnesHut', barnesHut: { gravitationalConstant: -3000, springLength: 200 } },
-          interaction: { hover: true, tooltipDelay: 150 }
-        };
+          const data = {
+            nodes: new vis.DataSet(Array.from(nodeMap.values())),
+            edges: new vis.DataSet(edges)
+          };
+          const options = {
+            nodes: { shadow: false },
+            edges: { smooth: { type: 'cubicBezier' }, font: { size: 12 } },
+            physics: {
+              enabled: true,
+              solver: 'barnesHut',
+              barnesHut: { gravitationalConstant: -3000, springLength: 200 }
+            },
+            interaction: { hover: true, tooltipDelay: 150 }
+          };
 
-        const network = new vis.Network(container, data, options);
-        network.once('stabilizationIterationsDone', () => {
-          network.fit({ animation: true });
+          const network = new vis.Network(container, data, options);
+          network.once('stabilizationIterationsDone', () => {
+            network.fit({ animation: true });
+          });
+          setTimeout(() => network.redraw(), 60);
+        }, 0);
+      };
+
+      const calculateStatistics = () => {
+        const totalAreaAdded = addLayersData.reduce(
+          (sum, item) => sum + (item.ShetachBaalutKKL || 0), 0
+        );
+
+        const areaByMerhav = {};
+        addLayersData.forEach(item => {
+          const merhav = item.HelkaMerhav || 'לא ידוע';
+          if (!areaByMerhav[merhav]) {
+            areaByMerhav[merhav] = {
+              totalArea: 0,
+              count: 0,
+              parcels: []
+            };
+          }
+          areaByMerhav[merhav].totalArea += item.ShetachBaalutKKL || 0;
+          areaByMerhav[merhav].count += 1;
+          areaByMerhav[merhav].parcels.push(`${item.GUSH}/${item.MisparHelka}`);
         });
-        // Safety redraw in case of slow style/layout
-        setTimeout(() => network.redraw(), 60);
+
+        const totalAreaLost = featuresOld.reduce(
+          (sum, f) => sum + (f.properties?.old_area || 0), 0
+        );
+        const totalAreaLostPct = featuresOld.reduce(
+          (sum, f) =>
+            sum +
+            ((f.properties?.old_area || 0) *
+             (f.properties?.area_lost_pct || 0) / 100),
+          0
+        );
+
+        return {
+          totalAreaAdded,
+          areaByMerhav,
+          totalAreaLost,
+          totalAreaLostPct,
+          netChange: totalAreaAdded - totalAreaLostPct
+        };
       };
 
       const downloadExcel = () => {
@@ -489,6 +541,7 @@
             'גוש חלקה - חדש': (p.new_keys || []).join(', '),
             'בעלות': p.old_baalot || '',
             'סוג': p.old_type || '',
+            'אחוז קקל': p.percentage_kkl != null ? p.percentage_kkl + '%' : '100%',
             'שטח שאבד': fmt(p.area_lost),
             'אחוז שטח שאבד': fmt(p.area_lost_pct) + '%',
             'ציון שאבד': fmt(p.score_lost)
@@ -498,16 +551,15 @@
         const ws = XLSX.utils.json_to_sheet(data);
         const wb = XLSX.utils.book_new();
         XLSX.utils.book_append_sheet(wb, ws, 'תוצאות השוואה');
-        
-        // Set column widths
         ws['!cols'] = [
-          { wch: 15 },  // גוש חלקה - ישן
-          { wch: 30 },  // גוש חלקה - חדש
-          { wch: 12 },  // בעלות
-          { wch: 8 },   // סוג
-          { wch: 12 },  // שטח שאבד
-          { wch: 15 },  // אחוז שטח שאבד
-          { wch: 12 }   // ציון שאבד
+          { wch: 15 },
+          { wch: 30 },
+          { wch: 12 },
+          { wch: 8 },
+          { wch: 10 },
+          { wch: 12 },
+          { wch: 15 },
+          { wch: 12 }
         ];
 
         XLSX.writeFile(wb, 'comparison_results.xlsx');
@@ -522,7 +574,7 @@
             geometry: f.geometry || null
           }))
         };
-        
+
         const blob = new Blob([JSON.stringify(geojson, null, 2)], { type: 'application/json' });
         const url = URL.createObjectURL(blob);
         const a = document.createElement('a');
@@ -541,18 +593,14 @@
       };
 
       const downloadBothLayers = () => {
-        // Download old layer
         downloadGeoJSON(filteredOld, 'old_parcels.geojson');
-        // Download new layer after a short delay
         setTimeout(() => {
           downloadGeoJSON(featuresNew, 'new_parcels.geojson');
         }, 100);
       };
 
       const downloadAllData = () => {
-        // Download Excel
         downloadExcel();
-        // Download both layers after short delays
         setTimeout(() => {
           downloadGeoJSON(filteredOld, 'old_parcels.geojson');
         }, 200);
@@ -561,7 +609,6 @@
         }, 400);
       };
 
-      // Get all unique keys for autocomplete
       const getAllKeys = () => {
         const keys = new Set();
         featuresOld.forEach(f => {
@@ -600,7 +647,6 @@
 
       const handleSort = (field) => {
         if (sortField === field) {
-          // Toggle direction
           setSortDirection(sortDirection === 'asc' ? 'desc' : 'asc');
         } else {
           setSortField(field);
@@ -610,7 +656,7 @@
 
       const getSortedData = () => {
         if (!sortField) return filteredOld;
-        
+
         return [...filteredOld].sort((a, b) => {
           const aProps = a.properties || {};
           const bProps = b.properties || {};
@@ -641,6 +687,10 @@
               aVal = aProps.score_lost || 0;
               bVal = bProps.score_lost || 0;
               break;
+            case 'percentage_kkl':
+              aVal = aProps.percentage_kkl || 0;
+              bVal = bProps.percentage_kkl || 0;
+              break;
             default:
               return 0;
           }
@@ -657,18 +707,333 @@
       const stats = {
         total: featuresOld.length,
         avgAreaLost: featuresOld.length
-          ? (featuresOld.reduce((s, f) => s + (f.properties.area_lost_pct || 0), 0) / featuresOld.length).toFixed(2)
+          ? (
+              featuresOld.reduce(
+                (s, f) => s + ((f.properties?.area_lost_pct) || 0),
+                0
+              ) / featuresOld.length
+            ).toFixed(2)
           : '0.00',
         totalScoreLost: featuresOld.length
-          ? featuresOld.reduce((s, f) => s + (f.properties.score_lost || 0), 0).toFixed(0)
+          ? featuresOld.reduce(
+              (s, f) => s + ((f.properties?.score_lost) || 0),
+              0
+            ).toFixed(0)
           : '0'
       };
+
+      const overlayActive = showStatisticsWindow || showNetworkWindow;
 
       return (
         <div className="container">
           <div className="header">
-            <h1>🗺️ בקרת איבוד שטחים - קק"ל</h1>
+            <div style={{display:'flex', justifyContent:'space-between', alignItems:'center'}}>
+              <div>
+                <h1>🗺️ בקרת איבוד שטחים - קק"ל</h1>
+              </div>
+              <button
+                className="btn"
+                onClick={() => setShowStatisticsWindow(true)}
+                style={{background:'rgba(255,255,255,0.2)', color:'#fff', padding:'8px 20px'}}
+              >
+                📊 נתונים סטטיסטיים
+              </button>
+            </div>
           </div>
+
+          {overlayActive && (
+            <div
+              id="overlay"
+              className="overlay active"
+              onClick={() => {
+                setShowStatisticsWindow(false);
+                setShowNetworkWindow(false);
+              }}
+            />
+          )}
+
+          {showNetworkWindow && (
+            <div id="networkWindow" className="network-window active">
+              <div className="network-header">
+                <h2>רשת קשרים מרכזיים</h2>
+                <button
+                  className="close-btn"
+                  onClick={() => setShowNetworkWindow(false)}
+                >
+                  ×
+                </button>
+              </div>
+              <div className="network-body">
+                <div id="network"></div>
+                <div className="net-legend">
+                  <h4>מקרא</h4>
+                  <div className="row">
+                    <div className="chip" style={{background:'#c3dafe', borderColor:'#2c5282'}}>חקלאי</div>
+                  </div>
+                  <div className="row">
+                    <div className="chip" style={{background:'#feebc8', borderColor:'#c05621'}}>מגורים</div>
+                  </div>
+                  <div className="row">
+                    <div className="chip" style={{background:'#c6f6d5', borderColor:'#276749'}}>ציבורי</div>
+                  </div>
+                  <div className="row">
+                    <div className="shape-box"></div> קק"ל (ריבוע)
+                  </div>
+                  <div className="row">
+                    <div className="shape-diamond"></div> מדינה (מעוין)
+                  </div>
+                  <div className="row">
+                    <div className="shape-ellipse"></div> אחר (אליפסה)
+                  </div>
+                </div>
+              </div>
+            </div>
+          )}
+
+          {showStatisticsWindow && (
+            <div id="statisticsWindow" className="network-window active">
+              <div className="network-header">
+                <h2>📊 נתונים סטטיסטיים - השוואת שטחים</h2>
+                <button
+                  className="close-btn"
+                  onClick={() => setShowStatisticsWindow(false)}
+                >
+                  ×
+                </button>
+              </div>
+              <div
+                className="network-body"
+                style={{padding:'20px', overflow:'auto', background:'#f7fafc'}}
+              >
+                {(() => {
+                  const statsCalc = calculateStatistics();
+                  return (
+                    <div style={{maxWidth:'1000px', margin:'0 auto'}}>
+                      {/* Summary Cards */}
+                      <div
+                        style={{
+                          display:'grid',
+                          gridTemplateColumns:'repeat(auto-fit, minmax(200px, 1fr))',
+                          gap:'20px',
+                          marginBottom:'30px'
+                        }}
+                      >
+                        <div style={{background:'#fff', padding:'20px', borderRadius:'8px', boxShadow:'0 2px 8px rgba(0,0,0,0.1)'}}>
+                          <div style={{fontSize:'14px', color:'#718096', marginBottom:'8px'}}>🟢 סך שטחים שנוספו</div>
+                          <div style={{fontSize:'28px', fontWeight:'700', color:'#48bb78'}}>
+                            {fmt(statsCalc.totalAreaAdded, 0)}
+                          </div>
+                          <div style={{fontSize:'12px', color:'#718096'}}>מ"ר</div>
+                        </div>
+                        <div style={{background:'#fff', padding:'20px', borderRadius:'8px', boxShadow:'0 2px 8px rgba(0,0,0,0.1)'}}>
+                          <div style={{fontSize:'14px', color:'#718096', marginBottom:'8px'}}>🔴 סך שטחים שאבדו</div>
+                          <div style={{fontSize:'28px', fontWeight:'700', color:'#e53e3e'}}>
+                            {fmt(statsCalc.totalAreaLostPct, 0)}
+                          </div>
+                          <div style={{fontSize:'12px', color:'#718096'}}>מ"ר</div>
+                        </div>
+                        <div style={{background:'#fff', padding:'20px', borderRadius:'8px', boxShadow:'0 2px 8px rgba(0,0,0,0.1)'}}>
+                          <div style={{fontSize:'14px', color:'#718096', marginBottom:'8px'}}>⚖️ שינוי נטו</div>
+                          <div
+                            style={{
+                              fontSize:'28px',
+                              fontWeight:'700',
+                              color:statsCalc.netChange >= 0 ? '#48bb78' : '#e53e3e'
+                            }}
+                          >
+                            {statsCalc.netChange >= 0 ? '+' : ''}
+                            {fmt(statsCalc.netChange, 0)}
+                          </div>
+                          <div style={{fontSize:'12px', color:'#718096'}}>מ"ר</div>
+                        </div>
+                        <div style={{background:'#fff', padding:'20px', borderRadius:'8px', boxShadow:'0 2px 8px rgba(0,0,0,0.1)'}}>
+                          <div style={{fontSize:'14px', color:'#718096', marginBottom:'8px'}}>📍 מספר מחוזות</div>
+                          <div style={{fontSize:'28px', fontWeight:'700', color:'#667eea'}}>
+                            {Object.keys(statsCalc.areaByMerhav).length}
+                          </div>
+                          <div style={{fontSize:'12px', color:'#718096'}}>מחוזות</div>
+                        </div>
+                      </div>
+
+                      {/* Details by Merhav */}
+                      <div
+                        style={{
+                          background:'#fff',
+                          borderRadius:'8px',
+                          padding:'20px',
+                          boxShadow:'0 2px 8px rgba(0,0,0,0.1)'
+                        }}
+                      >
+                        <h3 style={{marginBottom:'20px', color:'#2d3748'}}>פירוט לפי מחוז</h3>
+                        <table style={{width:'100%', borderCollapse:'collapse'}}>
+                          <thead>
+                            <tr style={{borderBottom:'2px solid #e2e8f0'}}>
+                              <th style={{padding:'12px', textAlign:'right', color:'#718096'}}>מחוז</th>
+                              <th style={{padding:'12px', textAlign:'right', color:'#718096'}}>מספר חלקות</th>
+                              <th style={{padding:'12px', textAlign:'right', color:'#718096'}}>סך שטח נוסף</th>
+                              <th style={{padding:'12px', textAlign:'right', color:'#718096'}}>ממוצע לחלקה</th>
+                              <th style={{padding:'12px', textAlign:'right', color:'#718096'}}>אחוז מסך הכל</th>
+                            </tr>
+                          </thead>
+                          <tbody>
+                            {Object.entries(statsCalc.areaByMerhav).map(([merhav, data]) => (
+                              <tr key={merhav} style={{borderBottom:'1px solid #f7fafc'}}>
+                                <td style={{padding:'12px'}}><strong>{merhav}</strong></td>
+                                <td style={{padding:'12px'}}>{data.count}</td>
+                                <td style={{padding:'12px', color:'#48bb78', fontWeight:'600'}}>
+                                  {fmt(data.totalArea, 0)} מ"ר
+                                </td>
+                                <td style={{padding:'12px'}}>
+                                  {fmt(data.totalArea / data.count, 0)} מ"ר
+                                </td>
+                                <td style={{padding:'12px'}}>
+                                  <span
+                                    style={{
+                                      background:'#c6f6d5',
+                                      color:'#276749',
+                                      padding:'2px 8px',
+                                      borderRadius:'4px',
+                                      fontSize:'12px',
+                                      fontWeight:'600'
+                                    }}
+                                  >
+                                    {fmt((data.totalArea / statsCalc.totalAreaAdded) * 100, 1)}%
+                                  </span>
+                                </td>
+                              </tr>
+                            ))}
+                          </tbody>
+                          <tfoot>
+                            <tr style={{borderTop:'2px solid #e2e8f0', fontWeight:'700'}}>
+                              <td style={{padding:'12px'}}>סה"כ</td>
+                              <td style={{padding:'12px'}}>{addLayersData.length}</td>
+                              <td style={{padding:'12px', color:'#48bb78'}}>
+                                {fmt(statsCalc.totalAreaAdded, 0)} מ"ר
+                              </td>
+                              <td style={{padding:'12px'}}>
+                                {addLayersData.length
+                                  ? fmt(statsCalc.totalAreaAdded / addLayersData.length, 0)
+                                  : '0'} מ"ר
+                              </td>
+                              <td style={{padding:'12px'}}>100%</td>
+                            </tr>
+                          </tfoot>
+                        </table>
+                      </div>
+
+                      {/* Comparison Chart */}
+                      <div
+                        style={{
+                          background:'#fff',
+                          borderRadius:'8px',
+                          padding:'20px',
+                          marginTop:'20px',
+                          boxShadow:'0 2px 8px rgba(0,0,0,0.1)'
+                        }}
+                      >
+                        <h3 style={{marginBottom:'20px', color:'#2d3748'}}>השוואה גרפית</h3>
+                        <div
+                          style={{
+                            display:'flex',
+                            gap:'20px',
+                            alignItems:'flex-end',
+                            height:'200px'
+                          }}
+                        >
+                          <div
+                            style={{
+                              flex:1,
+                              display:'flex',
+                              flexDirection:'column',
+                              justifyContent:'flex-end'
+                            }}
+                          >
+                            <div
+                              style={{
+                                background:'linear-gradient(135deg, #48bb78 0%, #68d391 100%)',
+                                height:`${
+                                  Math.min(
+                                    180,
+                                    (statsCalc.totalAreaAdded /
+                                      Math.max(
+                                        statsCalc.totalAreaAdded,
+                                        statsCalc.totalAreaLostPct || 1
+                                      )) * 180
+                                  )
+                                }px`,
+                                borderRadius:'8px 8px 0 0',
+                                display:'flex',
+                                alignItems:'center',
+                                justifyContent:'center',
+                                color:'#fff',
+                                fontWeight:'700',
+                                fontSize:'18px'
+                              }}
+                            >
+                              +{fmt(statsCalc.totalAreaAdded, 0)}
+                            </div>
+                            <div
+                              style={{
+                                textAlign:'center',
+                                marginTop:'10px',
+                                color:'#2d3748',
+                                fontWeight:'600'
+                              }}
+                            >
+                              שטחים שנוספו
+                            </div>
+                          </div>
+                          <div
+                            style={{
+                              flex:1,
+                              display:'flex',
+                              flexDirection:'column',
+                              justifyContent:'flex-end'
+                            }}
+                          >
+                            <div
+                              style={{
+                                background:'linear-gradient(135deg, #e53e3e 0%, #fc8181 100%)',
+                                height:`${
+                                  Math.min(
+                                    180,
+                                    (statsCalc.totalAreaLostPct /
+                                      Math.max(
+                                        statsCalc.totalAreaAdded || 1,
+                                        statsCalc.totalAreaLostPct || 1
+                                      )) * 180
+                                  )
+                                }px`,
+                                borderRadius:'8px 8px 0 0',
+                                display:'flex',
+                                alignItems:'center',
+                                justifyContent:'center',
+                                color:'#fff',
+                                fontWeight:'700',
+                                fontSize:'18px'
+                              }}
+                            >
+                              -{fmt(statsCalc.totalAreaLostPct, 0)}
+                            </div>
+                            <div
+                              style={{
+                                textAlign:'center',
+                                marginTop:'10px',
+                                color:'#2d3748',
+                                fontWeight:'600'
+                              }}
+                            >
+                              שטחים שאבדו
+                            </div>
+                          </div>
+                        </div>
+                      </div>
+                    </div>
+                  );
+                })()}
+              </div>
+            </div>
+          )}
 
           {loading && (
             <div style={{display:'flex',justifyContent:'center',alignItems:'center',height:'400px',fontSize:'18px',color:'#667eea'}}>
@@ -685,7 +1050,6 @@
             <div className="main-content">
               <div className="map-section">
                 <div id="map"></div>
-                <div className="legend"></div>
               </div>
 
               <div className="data-section">
@@ -726,26 +1090,38 @@
                       )}
                     </div>
                     <div style={{display:'flex',gap:'10px'}}>
-                      <button className="btn" onClick={resetFilters} style={{fontSize:'13px',padding:'6px 12px',background:'linear-gradient(135deg,#718096 0%,#4a5568 100%)'}}>
+                      <button
+                        className="btn"
+                        onClick={resetFilters}
+                        style={{
+                          fontSize:'13px',
+                          padding:'6px 12px',
+                          background:'linear-gradient(135deg,#718096 0%,#4a5568 100%)'
+                        }}
+                      >
                         🔄 אפס סינונים
                       </button>
-                      <button className="btn" onClick={downloadExcel} style={{fontSize:'13px',padding:'6px 12px'}}>
+                      <button
+                        className="btn"
+                        onClick={downloadExcel}
+                        style={{fontSize:'13px',padding:'6px 12px'}}
+                      >
                         📥 הורד Excel
                       </button>
                     </div>
                   </div>
-                  
+
                   <div className="filter-group">
-                    <input 
-                      type="text" 
-                      placeholder="גוש חלקה - ישן..." 
-                      value={searchTerm} 
+                    <input
+                      type="text"
+                      placeholder="גוש חלקה - ישן..."
+                      value={searchTerm}
                       onChange={(e)=>setSearchTerm(e.target.value)}
                     />
-                    <input 
-                      type="text" 
-                      placeholder="גוש חלקה - חדש..." 
-                      value={newKeysSearch} 
+                    <input
+                      type="text"
+                      placeholder="גוש חלקה - חדש..."
+                      value={newKeysSearch}
                       onChange={(e)=>setNewKeysSearch(e.target.value)}
                     />
                     <select value={baalotFilter} onChange={(e)=>setBaalotFilter(e.target.value)}>
@@ -762,31 +1138,31 @@
                   </div>
 
                   <div className="filter-group">
-                    <input 
-                      type="number" 
-                      placeholder="שטח שאבד מינימום (%)" 
-                      value={minAreaLost} 
+                    <input
+                      type="number"
+                      placeholder="שטח שאבד מינימום (%)"
+                      value={minAreaLost}
                       onChange={(e)=>setMinAreaLost(e.target.value)}
                       step="0.1"
                     />
-                    <input 
-                      type="number" 
-                      placeholder="שטח שאבד מקסימום (%)" 
-                      value={maxAreaLost} 
+                    <input
+                      type="number"
+                      placeholder="שטח שאבד מקסימום (%)"
+                      value={maxAreaLost}
                       onChange={(e)=>setMaxAreaLost(e.target.value)}
                       step="0.1"
                     />
-                    <input 
-                      type="number" 
-                      placeholder="ציון שאבד מינימום" 
-                      value={minScoreLost} 
+                    <input
+                      type="number"
+                      placeholder="ציון שאבד מינימום"
+                      value={minScoreLost}
                       onChange={(e)=>setMinScoreLost(e.target.value)}
                       step="0.1"
                     />
-                    <input 
-                      type="number" 
-                      placeholder="ציון שאבד מקסימום" 
-                      value={maxScoreLost} 
+                    <input
+                      type="number"
+                      placeholder="ציון שאבד מקסימום"
+                      value={maxScoreLost}
                       onChange={(e)=>setMaxScoreLost(e.target.value)}
                       step="0.1"
                     />
@@ -810,55 +1186,107 @@
                   </div>
                 </div>
 
-                <div style={{padding:'10px 15px',background:'#f7fafc',borderRadius:'8px 8px 0 0',fontSize:'12px',color:'#718096',display:'flex',justifyContent:'space-between',alignItems:'center'}}>
+                <div
+                  style={{
+                    padding:'10px 15px',
+                    background:'#f7fafc',
+                    borderRadius:'8px 8px 0 0',
+                    fontSize:'12px',
+                    color:'#718096',
+                    display:'flex',
+                    justifyContent:'space-between',
+                    alignItems:'center'
+                  }}
+                >
                   <span>💡 לחץ על כותרות הטבלה למיון הנתונים</span>
                   {sortField && (
-                    <button 
-                      onClick={() => {setSortField(null); setSortDirection('asc');}} 
-                      style={{background:'none',border:'none',color:'#667eea',cursor:'pointer',fontSize:'12px',textDecoration:'underline'}}
+                    <button
+                      onClick={() => {setSortField(null); setSortDirection('asc');}}
+                      style={{
+                        background:'none',
+                        border:'none',
+                        color:'#667eea',
+                        cursor:'pointer',
+                        fontSize:'12px',
+                        textDecoration:'underline'
+                      }}
                     >
                       בטל מיון
                     </button>
                   )}
                 </div>
 
-                <div className="table-container" style={{borderRadius:sortField ? '0 0 8px 8px' : '8px'}}>
+                <div className="table-container">
                   <table>
                     <thead>
                       <tr>
-                        <th 
-                          onClick={() => handleSort('old_key')} 
-                          style={{cursor:'pointer', background: sortField === 'old_key' ? '#edf2f7' : 'transparent', fontWeight: sortField === 'old_key' ? '700' : '600'}}
+                        <th
+                          onClick={() => handleSort('old_key')}
+                          style={{
+                            cursor:'pointer',
+                            background: sortField === 'old_key' ? '#edf2f7' : 'transparent',
+                            fontWeight: sortField === 'old_key' ? '700' : '600'
+                          }}
                         >
                           גוש חלקה - ישן {sortField === 'old_key' && (sortDirection === 'asc' ? '↑' : '↓')}
                         </th>
-                        <th 
-                          onClick={() => handleSort('new_keys')} 
-                          style={{cursor:'pointer', background: sortField === 'new_keys' ? '#edf2f7' : 'transparent', fontWeight: sortField === 'new_keys' ? '700' : '600'}}
+                        <th
+                          onClick={() => handleSort('new_keys')}
+                          style={{
+                            cursor:'pointer',
+                            background: sortField === 'new_keys' ? '#edf2f7' : 'transparent',
+                            fontWeight: sortField === 'new_keys' ? '700' : '600'
+                          }}
                         >
                           גוש חלקה - חדש {sortField === 'new_keys' && (sortDirection === 'asc' ? '↑' : '↓')}
                         </th>
-                        <th 
-                          onClick={() => handleSort('old_baalot')} 
-                          style={{cursor:'pointer', background: sortField === 'old_baalot' ? '#edf2f7' : 'transparent', fontWeight: sortField === 'old_baalot' ? '700' : '600'}}
+                        <th
+                          onClick={() => handleSort('old_baalot')}
+                          style={{
+                            cursor:'pointer',
+                            background: sortField === 'old_baalot' ? '#edf2f7' : 'transparent',
+                            fontWeight: sortField === 'old_baalot' ? '700' : '600'
+                          }}
                         >
                           בעלות {sortField === 'old_baalot' && (sortDirection === 'asc' ? '↑' : '↓')}
                         </th>
-                        <th 
-                          onClick={() => handleSort('old_type')} 
-                          style={{cursor:'pointer', background: sortField === 'old_type' ? '#edf2f7' : 'transparent', fontWeight: sortField === 'old_type' ? '700' : '600'}}
+                        <th
+                          onClick={() => handleSort('old_type')}
+                          style={{
+                            cursor:'pointer',
+                            background: sortField === 'old_type' ? '#edf2f7' : 'transparent',
+                            fontWeight: sortField === 'old_type' ? '700' : '600'
+                          }}
                         >
                           סוג {sortField === 'old_type' && (sortDirection === 'asc' ? '↑' : '↓')}
                         </th>
-                        <th 
-                          onClick={() => handleSort('area_lost')} 
-                          style={{cursor:'pointer', background: sortField === 'area_lost' ? '#edf2f7' : 'transparent', fontWeight: sortField === 'area_lost' ? '700' : '600'}}
+                        <th
+                          onClick={() => handleSort('percentage_kkl')}
+                          style={{
+                            cursor:'pointer',
+                            background: sortField === 'percentage_kkl' ? '#edf2f7' : 'transparent',
+                            fontWeight: sortField === 'percentage_kkl' ? '700' : '600'
+                          }}
+                        >
+                          אחוז קק"ל {sortField === 'percentage_kkl' && (sortDirection === 'asc' ? '↑' : '↓')}
+                        </th>
+                        <th
+                          onClick={() => handleSort('area_lost')}
+                          style={{
+                            cursor:'pointer',
+                            background: sortField === 'area_lost' ? '#edf2f7' : 'transparent',
+                            fontWeight: sortField === 'area_lost' ? '700' : '600'
+                          }}
                         >
                           שטח שאבד {sortField === 'area_lost' && (sortDirection === 'asc' ? '↑' : '↓')}
                         </th>
-                        <th 
-                          onClick={() => handleSort('score_lost')} 
-                          style={{cursor:'pointer', background: sortField === 'score_lost' ? '#edf2f7' : 'transparent', fontWeight: sortField === 'score_lost' ? '700' : '600'}}
+                        <th
+                          onClick={() => handleSort('score_lost')}
+                          style={{
+                            cursor:'pointer',
+                            background: sortField === 'score_lost' ? '#edf2f7' : 'transparent',
+                            fontWeight: sortField === 'score_lost' ? '700' : '600'
+                          }}
                         >
                           ציון שאבד {sortField === 'score_lost' && (sortDirection === 'asc' ? '↑' : '↓')}
                         </th>
@@ -868,27 +1296,44 @@
                       {getSortedData().map((f, idx) => {
                         const p = f.properties || {};
                         return (
-                          <tr key={idx} onClick={() => {
-                            const latlngs = oldLatLngs(f);
-                            const map = mapInstanceRef.current;
-                            if (latlngs && latlngs.length && map) {
-                              map.fitBounds(L.latLngBounds(latlngs), { padding:[20,20] });
-                            }
-                            if (showNewLayer) {
-                              (p.new_keys || []).forEach(k => {
-                                const layer = newLayerIndexRef.current.get(k);
-                                if (layer) flashLayer(layer);
-                              });
-                            }
-                          }}>
+                          <tr
+                            key={idx}
+                            onClick={() => {
+                              const latlngs = oldLatLngs(f);
+                              const map = mapInstanceRef.current;
+                              if (latlngs && latlngs.length && map) {
+                                map.fitBounds(L.latLngBounds(latlngs), { padding:[20,20] });
+                              }
+                              if (showNewLayer) {
+                                (p.new_keys || []).forEach(k => {
+                                  const layer = newLayerIndexRef.current.get(k);
+                                  if (layer) flashLayer(layer);
+                                });
+                              }
+                            }}
+                          >
                             <td><strong>{p.old_key}</strong></td>
                             <td>
-                              {(p.new_keys || []).map((k,i)=>(
-                                <span key={i} className={`badge badge-type-${(p.new_type||[])[i]}`}>{k} </span>
+                              {(p.new_keys || []).map((k, i) => (
+                                <span
+                                  key={i}
+                                  className={`badge badge-type-${(p.new_type || [])[i]}`}
+                                >
+                                  {k}
+                                </span>
                               ))}
                             </td>
                             <td>{p.old_baalot}</td>
-                            <td><span className={`badge badge-type-${p.old_type}`}>{typeToLabel(p.old_type)}</span></td>
+                            <td>
+                              <span className={`badge badge-type-${p.old_type}`}>
+                                {typeToLabel(p.old_type)}
+                              </span>
+                            </td>
+                            <td>
+                              <span className="stat neutral" style={{fontWeight:'500'}}>
+                                {p.percentage_kkl != null ? `${p.percentage_kkl}%` : '100%'}
+                              </span>
+                            </td>
                             <td>
                               <span className={(p.area_lost||0) > 0 ? 'stat negative' : 'stat neutral'}>
                                 {fmt(p.area_lost)} ({fmt(p.area_lost_pct)}%)
@@ -913,15 +1358,7 @@
       );
     }
 
-    window.addEventListener('load', function() {
-      ReactDOM.render(<App />, document.getElementById('root'));
-    });
-
-    function closeNetwork() {
-      document.getElementById('networkWindow').classList.remove('active');
-      document.getElementById('overlay').classList.remove('active');
-    }
-    document.getElementById('overlay').addEventListener('click', closeNetwork);
+    ReactDOM.render(<App />, document.getElementById('root'));
   </script>
 </body>
 </html>
